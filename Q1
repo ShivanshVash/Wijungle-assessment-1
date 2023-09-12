@@ -1,0 +1,65 @@
+#include <iostream>
+#include <unistd.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/wait.h>  
+
+using namespace std;
+
+int main() {
+    // Create a shared memory segment
+    key_t key = ftok("shmfile", 65); 
+    int shmid = shmget(key, sizeof(int), IPC_CREAT | 0666);
+    if (shmid == -1) {
+        cerr << "Shared memory creation failed." << endl;
+        return 1;
+    }
+
+    // Attach shared memory
+    int* sharedData = (int*)shmat(shmid, nullptr, 0);
+    if (sharedData == nullptr) {  // Check if it's nullptr (error)
+        cerr << "Shared memory attachment failed." << endl;
+        return 1;
+    }
+
+    
+    *sharedData = 0;
+
+    // Fork two child processes
+    pid_t child1 = fork();
+
+    if (child1 < 0) {
+        cerr << "Forking child 1 failed." << endl;
+        return 1;
+    } else if (child1 == 0) {  // Child 1 process
+        while (true) {
+            (*sharedData)++;
+            cout << "Child 1: Incremented sharedData to " << *sharedData << endl;
+            usleep(1000000);  
+        }
+    } else {  // Parent process
+        pid_t child2 = fork();
+
+        if (child2 < 0) {
+            cerr << "Forking child 2 failed." << endl;
+            return 1;
+        } else if (child2 == 0) {  // Child 2 process
+            while (true) {
+                (*sharedData)--;
+                cout << "Child 2: Decremented sharedData to " << *sharedData << endl;
+                usleep(1000000);  
+            }
+        } else {  // Parent process
+            // Parent waits for both child processes to complete
+            wait(nullptr);
+            wait(nullptr);
+
+            // Detach and remove shared memory
+            shmdt(sharedData);
+            shmctl(shmid, IPC_RMID, nullptr);
+            cout << "Shared memory detached and removed." << endl;
+        }
+    }
+
+    return 0;
+}
